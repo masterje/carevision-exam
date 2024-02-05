@@ -4,6 +4,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Api\LoginController;
 use App\Http\Controllers\Api\EventsController;
+use App\Http\Controllers\Api\EventsSearchController;
 
 /*
 |--------------------------------------------------------------------------
@@ -23,6 +24,7 @@ Route::prefix('v1')->group(function () {
     Route::middleware('auth:api')->group(function () {
         Route::post('auth-check', [LoginController::class, 'authCheck']);
         Route::post('logout', [LoginController::class, 'logout']);
-        Route::resource('events', EventsController::class);
+        Route::get('event/instance', [EventsController::class, 'search']);
+        Route::resource('event', EventsController::class);
     });
 });

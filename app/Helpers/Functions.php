@@ -16,7 +16,7 @@ function sendResponse($result, $message)
 {
     $response = [
         'success' => true,
-        'data'    => $result,
+        'items'    => $result,
         'message' => $message,
     ];
 
@@ -38,7 +38,7 @@ function sendError($error, $errorMessages = [], $code = 404)
         'message' => $error,
     ];
 
-    !empty($errorMessages) ? $response['data'] = $errorMessages : null;
+    !empty($errorMessages) ? $response['items'] = $errorMessages : null;
 
     return response()->json($response, $code);
 }

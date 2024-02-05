@@ -9,6 +9,8 @@ use App\Models\UserEvents;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Exception;
+use Carbon\Carbon;
+use DB;
 
 class EventsController extends Controller
 {
@@ -36,49 +38,61 @@ class EventsController extends Controller
             'name'       => 'required|min:10',
             'frequency' => 'required',
             'start_datetime' => 'required|date',
-            'end_datetime' => 'required|date|after:start_datetime',
-            'duration' => 'required|integer', //to be autocomputed
+            //'end_datetime' => 'required|date|after:start_datetime',
+            'duration' => 'required|integer|min:5',
             'invitees' => 'required|json'
         ]);
 
-        $invitees = json_decode($request->invitees);
-
         if ($validator->fails()) return sendError('Validation Error.', $validator->errors(), 422);
 
-        if ( !is_array($invitees) && !empty($invitees))
+        $invitees = json_decode($request->invitees);
+        if ( !is_array($invitees) || empty($invitees))
             return sendError('Validation Error.', ['invitees must be an array'], 422);
 
-        try {
-            $post = Events::create([
-                'name'       => $request->name,
-                'frequency' => $request->frequency,
-                'start_datetime' => $request->start_datetime,
-                'end_datetime' => $request->end_datetime,
-                'duration' => $request->duration, //to be autocomputed
-            ]);
-
-            $success = new EventsResource($post);
-            $message = 'Event successfully created.';
-        } catch (Exception $e) {
-            $success = [];
-            $message = 'Oops! Unable to create a the event.';
+        $validFrequencies = ['once-off','weekly','monthly'];
+        if(!in_array( strtolower($request->frequency), $validFrequencies)) {
+            return sendError('Validation Error.', ['Invalid frequency'], 422);
         }
 
         try {
-            foreach ($invitees as $row) {
-                $userEvents = UserEvents::create([
-                    'event_id' => $post->id,
-                    'user_id' => $row
-                ]);
+            if (!$request->start_endtime || $request->start_endtime == ''){
+                $endDateTime = Carbon::create( $request->start_datetime )->addMinutes($request->duration);
+            }
+            else {
+                $endDateTime = Carbon::create( $request->end_datetime );
             }
 
+            $post = Events::create([
+                'name' => $request->name,
+                'frequency' => strtolower($request->frequency),
+                'start_datetime' => $request->start_datetime,
+                'end_datetime' => $endDateTime->toDateTimeString(),
+                'duration' => $request->duration,
+            ]);
+
+            try {
+                foreach ($invitees as $row) {
+                    $userEvents = UserEvents::create([
+                        'event_id' => $post->id,
+                        'user_id' => $row
+                    ]);
+                }
+
+            } catch (Exception $e) {
+
+                UserEvents::where('event_id','=',$post->id)->delete();
+                Events::find($post->id)->delete();
+
+                $success = [];
+                $message = $e;
+            }
+
+            $success = new EventsResource($post);
+            $message = 'Event successfully created.';
+
         } catch (Exception $e) {
-
-            UserEvents::where('event_id','=',$post->id)->delete();
-            Events::find($post->id)->delete();
-
             $success = [];
-            $message = $e;
+            $message = 'Oops! Unable to create a the event.';
         }
 
         return sendResponse($success, $message);
@@ -144,5 +158,27 @@ class EventsController extends Controller
         } catch (Exception $e) {
             return sendError('Oops! Unable to delete event.');
         }
+    }
+
+    public function search(Request $request)
+    {
+        $events = Events::select('events.*', DB::raw('group_concat("user_events.user_id")') )
+            ->join('user_events','user_events.event_id','=', 'events.id');
+
+        if($request->to != '') {
+            $to = Carbon::create($request->to);
+            $events->whereBetween('start_datetime', [$request->from, $to->addDays(1)->toDateString()]);
+        } else {
+            $events->where('start_datetime','>=', $request->from);
+        }
+
+        if($request->invitees != '') {
+            $users = explode(",", $request->invitees);
+            $events->whereIn('user_events.user_id', $users );
+        }
+
+        $events->groupBy('events.id');
+
+        return sendResponse(EventsResource::collection($events->get()), 'Events retrieved successfully...');
     }
 }

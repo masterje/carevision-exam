@@ -18,7 +18,7 @@ class EventsResource extends JsonResource
         return [
             'id' => $this->id,
             'eventName' => $this->name,
-            'frequency' => $this->frequency,
+            'frequency' => ucfirst($this->frequency),
             'startDateTime' => $this->start_datetime,
             'endDateTime' => $this->end_datetime,
             'duration' => $this->duration,
@@ -33,7 +33,7 @@ class EventsResource extends JsonResource
         foreach($users as $user) {
             array_push($data, $user->user_id);
         }
-        
+
         return $data;
     }
 }
