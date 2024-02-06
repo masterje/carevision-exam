@@ -16,8 +16,9 @@ return new class extends Migration
             $table->string('name');
             $table->string('frequency');
             $table->dateTime('start_datetime');
-            $table->dateTime('end_datetime');
+            $table->dateTime('end_datetime')->nullable();
             $table->integer('duration');
+            $table->dateTime('duration_datetime');
             $table->timestamps();
         });
     }
