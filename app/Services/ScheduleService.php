@@ -25,11 +25,17 @@ class ScheduleService
         else {
             if($event->start_datetime <= $inputStartDate) {
                 $conflict = 1;
-            }            
+            }
+
+            $estimatedEnd = Carbon::create($inputStartDate)->addMinutes($duration)->toDateTimeString();
+
+            if($estimatedEnd > $event->start_datetime) {
+                $conflict = 1;
+            }
         }
 
         //pass 2, check duration times
-        $durationCheck = Events::where('start_datetime','<', $inputStartDate)
+        $durationCheck = Events::where('start_datetime','<=', $inputStartDate)
         ->whereIn('user_events.user_id', $userIds )
         ->join('user_events','user_events.event_id','=', 'events.id')
         ->orderBy('start_datetime','DESC')

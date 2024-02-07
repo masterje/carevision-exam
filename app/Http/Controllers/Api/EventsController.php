@@ -11,6 +11,7 @@ use Illuminate\Support\Facades\Validator;
 use Exception;
 use Carbon\Carbon;
 use DB;
+use App\Services\ScheduleService;
 
 class EventsController extends Controller
 {
@@ -38,7 +39,7 @@ class EventsController extends Controller
             'name'       => 'required|min:10',
             'frequency' => 'required',
             'start_datetime' => 'required|date',
-            //'end_datetime' => 'required|date|after:start_datetime',
+            'end_datetime' => 'date|after:start_datetime',
             'duration' => 'required|integer|min:5',
             'invitees' => 'required|json'
         ]);
@@ -50,24 +51,41 @@ class EventsController extends Controller
             return sendError('Validation Error.', ['invitees must be an array'], 422);
 
         $validFrequencies = ['once-off','weekly','monthly'];
-        if(!in_array( strtolower($request->frequency), $validFrequencies)) {
+        if (!in_array( strtolower($request->frequency), $validFrequencies)) {
             return sendError('Validation Error.', ['Invalid frequency'], 422);
         }
 
+        if (strtolower($request->frequency) == 'once-off' && $request->end_datetime != '') {
+            return sendError('Validation Error.', ['endDateTime should be null if frequency is Once-off'], 422);
+        }
+
+        $scheduleCheck = ScheduleService::checkForConflicts($request->start_datetime, $request->end_datetime,
+            $invitees, $request->duration);
+        if($scheduleCheck > 0) {
+            return sendError('Validation Error.', ['Schedule conflict detected for 1 or more users'], 422);
+        }
+
         try {
-            if (!$request->start_endtime || $request->start_endtime == ''){
-                $endDateTime = Carbon::create( $request->start_datetime )->addMinutes($request->duration);
+            $duration = $request->duration;
+
+            if (!$request->end_datetime || $request->end_datetime == '') {
+                $endDateTime = '';
             }
             else {
-                $endDateTime = Carbon::create( $request->end_datetime );
+                $tmpEndDateTime = Carbon::create( $request->end_datetime );
+
+                //overrides duration
+                $duration = $tmpEndDateTime->diffInMinutes(Carbon::create( $request->start_datetime ));
+                $endDateTime = $tmpEndDateTime->toDateTimeString();
             }
 
             $post = Events::create([
                 'name' => $request->name,
                 'frequency' => strtolower($request->frequency),
                 'start_datetime' => $request->start_datetime,
-                'end_datetime' => $endDateTime->toDateTimeString(),
-                'duration' => $request->duration,
+                'end_datetime' => $endDateTime,
+                'duration' => $duration,
+                'duration_datetime' => Carbon::create( $request->start_datetime )->addMinutes($duration)->toDateTimeString(),
             ]);
 
             try {
@@ -92,7 +110,7 @@ class EventsController extends Controller
 
         } catch (Exception $e) {
             $success = [];
-            $message = 'Oops! Unable to create a the event.';
+            $message = $e. 'Sorry! Unable to create a the event.';
         }
 
         return sendResponse($success, $message);
@@ -107,9 +125,7 @@ class EventsController extends Controller
     public function show($id)
     {
         $event = Events::find($id);
-
         if (is_null($event)) return sendError('Event not found.');
-
         return sendResponse(new EventsResource($event), 'Event retrieved successfully.');
     }
 
@@ -138,7 +154,7 @@ class EventsController extends Controller
             $message = 'Yay! Post has been successfully updated.';
         } catch (Exception $e) {
             $success = [];
-            $message = 'Oops, Failed to update the post.';
+            $message = 'Sorry, Failed to update the post.';
         }
 
         return sendResponse($success, $message);
@@ -156,12 +172,19 @@ class EventsController extends Controller
             $event->delete();
             return sendResponse([], 'Event successfully deleted.');
         } catch (Exception $e) {
-            return sendError('Oops! Unable to delete event.');
+            return sendError('Sorry! Unable to delete event.');
         }
     }
 
     public function search(Request $request)
     {
+        $validator = Validator::make($request->all(), [
+            'from' => 'required|date',
+            'to' => 'date|after:start_datetime'
+        ]);
+
+        if ($validator->fails()) return sendError('Validation Error.', $validator->errors(), 422);
+
         $events = Events::select('events.*', DB::raw('group_concat("user_events.user_id")') )
             ->join('user_events','user_events.event_id','=', 'events.id');
 
